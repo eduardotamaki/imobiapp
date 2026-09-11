@@ -1,0 +1,16 @@
+# Sobe só o site (web/) no Render. O banco vai junto como snapshot em
+# web/data/imoveis.db, gerado por `./run.py exportar` depois de cada coleta.
+services:
+  - type: web
+    name: imobiapp
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/resumo
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: IMOBIAPP_DB
+        value: data/imoveis.db

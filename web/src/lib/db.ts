@@ -15,8 +15,15 @@ import { norm } from "./normalize";
 import { rotuloTipo } from "./format";
 import type { Sugestao } from "./types";
 
-export const CAMINHO_DB =
-  process.env.IMOBIAPP_DB ?? path.resolve(process.cwd(), "..", "data", "imoveis.db");
+// IMOBIAPP_DB manda; senão o banco vivo dos scrapers (../data) e, por último,
+// o snapshot que `./run.py exportar` deixa em web/data para o deploy só do site.
+export const CAMINHO_DB = path.resolve(
+  process.env.IMOBIAPP_DB ??
+    [path.join("..", "data", "imoveis.db"), path.join("data", "imoveis.db")].find((c) =>
+      fs.existsSync(/*turbopackIgnore: true*/ c),
+    ) ??
+    path.join("..", "data", "imoveis.db"),
+);
 
 export const FOTO_LIXO =
   /no-?image|sem-?foto|semimagem|favicon|\/logo|logo[._-]|fundosite|placeholder|default\.(?:jpe?g|png)|indispon|\.svg(?:$|\?)/i;

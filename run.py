@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import pathlib
 import concurrent.futures as futuros
 import sqlite3
 import sys
@@ -202,6 +203,22 @@ def _tabela(linhas: list[sqlite3.Row]):
         print(f"  {'':>14}  {r['url']}")
 
 
+def cmd_exportar(args):
+    """Copia o banco num arquivo único e limpo (sem WAL) para o site publicar."""
+    destino = pathlib.Path(args.destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destino.with_suffix(".tmp")
+    tmp.unlink(missing_ok=True)
+    con = db.conecta(args.banco, criar_esquema=False)
+    con.execute("VACUUM INTO ?", (str(tmp),))
+    con.close()
+    tmp.replace(destino)
+    con = sqlite3.connect(destino)
+    n = con.execute("SELECT count(*) FROM imoveis").fetchone()[0]
+    con.close()
+    print(f"{destino}: {n} imóveis, {destino.stat().st_size / 1e6:.1f} MB")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -244,6 +261,10 @@ def main(argv=None):
     c = sub.add_parser("novidades", help="o que entrou ou mudou de preço")
     c.add_argument("--dias", type=int, default=7)
     c.set_defaults(func=cmd_novidades)
+
+    c = sub.add_parser("exportar", help="gera web/data/imoveis.db para publicar o site")
+    c.add_argument("--destino", default="web/data/imoveis.db")
+    c.set_defaults(func=cmd_exportar)
 
     args = p.parse_args(argv)
     return args.func(args)

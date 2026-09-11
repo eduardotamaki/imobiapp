@@ -23,10 +23,27 @@ panorama do mercado e favoritos. Veja [web/README.md](web/README.md).
 cd web && npm install && npm run dev    # http://localhost:3000
 ```
 
+## Publicar só o site (Render)
+
+O `render.yaml` na raiz sobe apenas `web/`. Como o Render free não tem disco
+persistente, o banco vai dentro do repositório como snapshot em
+`web/data/imoveis.db`, sem WAL, gerado a partir do banco vivo:
+
+```bash
+./run.py coletar     # atualiza data/imoveis.db
+./run.py exportar    # copia limpa em web/data/imoveis.db
+git add web/data/imoveis.db && git commit -m "Atualiza catálogo" && git push
+```
+
+Cada push redeploya o site com os dados novos. Localmente o site continua
+lendo `data/imoveis.db`; o snapshot só é usado quando o banco vivo não existe
+ou quando `IMOBIAPP_DB` aponta para ele.
+
 ## Comandos
 
 | Comando | Para quê |
 |---|---|
+| `exportar` | Gera `web/data/imoveis.db`, o snapshot que o site publicado usa. |
 | `coletar` | Roda os scrapers. `--só galhardo,dfc` limita os sites, `--limite 5` limita imóveis por site, `--sem-cache` força rede. |
 | `listar` | Mostra os 31 sites registrados, plataforma e situação. |
 | `buscar` | Consulta o catálogo: `--max-preco --min-preco --quartos --vagas --area --tipo --cidade --bairro --ordem preco_m2`. |
