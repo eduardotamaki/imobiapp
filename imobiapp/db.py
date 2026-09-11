@@ -115,6 +115,57 @@ CREATE TABLE IF NOT EXISTS coletas (
     erro           TEXT
 );
 
+-- ----------------------------------------------------------------------
+-- Backoffice (web/): usuarios, sessoes, leads e auditoria. O site cria e
+-- migra estas tabelas sozinho; ficam aqui tambem para um banco novo ja
+-- nascer completo.
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id             INTEGER PRIMARY KEY,
+    imobiliaria_id INTEGER REFERENCES imobiliarias(id) ON DELETE CASCADE,  -- nulo = admin geral
+    nome           TEXT NOT NULL,
+    email          TEXT NOT NULL UNIQUE,
+    senha_hash     TEXT NOT NULL,
+    papel          TEXT NOT NULL DEFAULT 'imobiliaria',   -- admin | imobiliaria
+    ativo          INTEGER NOT NULL DEFAULT 1,
+    criado_em      TEXT NOT NULL,
+    ultimo_acesso  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sessoes (
+    token_hash TEXT PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    criado_em  TEXT NOT NULL,
+    expira_em  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS leads (
+    id             INTEGER PRIMARY KEY,
+    imobiliaria_id INTEGER NOT NULL REFERENCES imobiliarias(id) ON DELETE CASCADE,
+    imovel_id      INTEGER REFERENCES imoveis(id) ON DELETE SET NULL,
+    nome           TEXT NOT NULL,
+    telefone       TEXT,
+    email          TEXT,
+    mensagem       TEXT,
+    origem         TEXT NOT NULL DEFAULT 'site',
+    status         TEXT NOT NULL DEFAULT 'novo',  -- novo | em_contato | fechado | descartado
+    obs            TEXT,
+    criado_em      TEXT NOT NULL,
+    atualizado_em  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_leads_imob ON leads(imobiliaria_id, status, criado_em);
+
+CREATE TABLE IF NOT EXISTS auditoria (
+    id             INTEGER PRIMARY KEY,
+    usuario_id     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    imobiliaria_id INTEGER REFERENCES imobiliarias(id) ON DELETE CASCADE,
+    imovel_id      INTEGER REFERENCES imoveis(id) ON DELETE SET NULL,
+    acao           TEXT NOT NULL,
+    detalhes       TEXT,          -- JSON com o que mudou
+    criado_em      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_auditoria_imob ON auditoria(imobiliaria_id, criado_em);
+
 -- Visao pronta pra garimpar oportunidade.
 CREATE VIEW IF NOT EXISTS v_imoveis AS
 SELECT i.id, m.nome AS imobiliaria, i.tipo, i.finalidade,
@@ -164,7 +215,38 @@ def conecta(caminho: str = CAMINHO_PADRAO, criar_esquema: bool = True) -> sqlite
     con.execute("PRAGMA foreign_keys = ON")
     if criar_esquema:
         con.executescript(ESQUEMA)
+        migra(con)
     return con
+
+
+# Colunas acrescentadas depois do esquema original. `migra` cria as que faltam,
+# entao o mesmo codigo serve para banco novo e para banco antigo.
+COLUNAS_NOVAS = {
+    "imoveis": [
+        ("origem", "TEXT NOT NULL DEFAULT 'scraper'"),   # scraper | manual
+        ("travado", "INTEGER NOT NULL DEFAULT 0"),       # 1 = a coleta nao sobrescreve
+        ("destaque", "INTEGER NOT NULL DEFAULT 0"),
+        ("obs_interna", "TEXT"),
+    ],
+    "imobiliarias": [
+        ("telefone", "TEXT"),
+        ("whatsapp", "TEXT"),
+        ("email", "TEXT"),
+        ("endereco", "TEXT"),
+        ("creci", "TEXT"),
+        ("sobre", "TEXT"),
+        ("logo", "TEXT"),
+    ],
+}
+
+
+def migra(con: sqlite3.Connection) -> None:
+    for tabela, colunas in COLUNAS_NOVAS.items():
+        existentes = {r[1] for r in con.execute(f"PRAGMA table_info({tabela})")}
+        for nome, tipo in colunas:
+            if nome not in existentes:
+                con.execute(f"ALTER TABLE {tabela} ADD COLUMN {nome} {tipo}")
+    con.commit()
 
 
 def prepara(caminho: str = CAMINHO_PADRAO) -> None:
@@ -228,7 +310,7 @@ def salva_imovel(con, imobiliaria_id: int, dados: dict) -> str:
     valores = {k: dados.get(k) for k in CAMPOS}
 
     linha = con.execute(
-        "SELECT id, hash_conteudo, preco, preco_aluguel FROM imoveis WHERE url=?", (url,)
+        "SELECT id, hash_conteudo, preco, preco_aluguel, travado FROM imoveis WHERE url=?", (url,)
     ).fetchone()
 
     if linha is None:
@@ -247,6 +329,10 @@ def salva_imovel(con, imobiliaria_id: int, dados: dict) -> str:
         return "novo"
 
     imovel_id = linha["id"]
+    # Editado no backoffice: a coleta so registra que o anuncio continua no ar.
+    if linha["travado"]:
+        con.execute("UPDATE imoveis SET visto_em=? WHERE id=?", (ts, imovel_id))
+        return "igual"
     if linha["hash_conteudo"] == h:
         con.execute(
             "UPDATE imoveis SET visto_em=?, status='disponivel' WHERE id=?", (ts, imovel_id)
@@ -298,7 +384,8 @@ def marca_removidos(con, imobiliaria_id: int, inicio_coleta: str) -> int:
     """Anuncios que nao apareceram nesta coleta viram 'removido' (vendido/alugado)."""
     cur = con.execute(
         """UPDATE imoveis SET status='removido', atualizado_em=?
-           WHERE imobiliaria_id=? AND status='disponivel' AND visto_em < ?""",
+           WHERE imobiliaria_id=? AND status='disponivel' AND origem='scraper'
+             AND travado=0 AND visto_em < ?""",
         (agora(), imobiliaria_id, inicio_coleta),
     )
     return cur.rowcount

@@ -8,6 +8,8 @@ import Compartilhar from "@/components/Compartilhar";
 import RegistraVisita from "@/components/RegistraVisita";
 import MapaImovel from "@/components/MapaImovel";
 import { Externo, Pino } from "@/components/Icones";
+import FormContato from "@/components/FormContato";
+import { enviarContato } from "@/app/painel/acoes";
 import { detalhe } from "@/lib/catalogo";
 import { fmtArea, fmtData, fmtDataHora, fmtM2, fmtPct, fmtPreco, rotuloTipo, tituloCurto } from "@/lib/format";
 
@@ -44,6 +46,11 @@ export default async function PaginaImovel({ params }: PageProps<"/imovel/[id]">
   const m2Ref = fin === "aluguel" ? i.aluguel_m2 : i.preco_m2;
   const titulo = tituloCurto(i);
   const local = [i.endereco, i.bairro, i.cidade && `${i.cidade}${i.uf ? `/${i.uf}` : ""}`].filter(Boolean).join(" · ");
+  const externo = /^https?:\/\//i.test(i.url);
+  const siteImob = /^https?:\/\/.+\..+/i.test(i.imobiliaria_site);
+  const whatsapp = i.imobiliaria_whatsapp
+    ? `https://wa.me/${i.imobiliaria_whatsapp.length <= 11 ? "55" : ""}${i.imobiliaria_whatsapp}?text=${encodeURIComponent(`Olá! Vi o anúncio "${titulo}"${i.codigo ? ` (ref. ${i.codigo})` : ""} no imobiapp e tenho interesse.`)}`
+    : null;
   const buscaBairro = i.bairro ? `/?bairro=${encodeURIComponent(i.bairro)}${i.tipo ? `&tipo=${i.tipo}` : ""}${fin === "aluguel" ? "&fin=aluguel" : ""}` : "/";
 
   return (
@@ -83,7 +90,9 @@ export default async function PaginaImovel({ params }: PageProps<"/imovel/[id]">
             </div>
             <Compartilhar titulo={titulo} texto={`${titulo} – ${fmtPreco(precoRef)}${fin === "aluguel" ? "/mês" : ""} (${i.imobiliaria})`} />
             {i.status !== "disponivel" && (
-              <span className="rounded-md bg-neutral-700 px-2 py-1 text-xs font-semibold text-white">Saiu do ar em {fmtData(i.atualizado_em)}</span>
+              <span className="rounded-md bg-neutral-700 px-2 py-1 text-xs font-semibold text-white">
+                {i.status === "vendido" ? "Vendido" : i.status === "alugado" ? "Alugado" : i.status === "pausado" ? "Pausado" : "Saiu do ar"} em {fmtData(i.atualizado_em)}
+              </span>
             )}
             {i.novo === 1 && <span className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-accent-fg">Novo no catálogo</span>}
           </div>
@@ -239,18 +248,45 @@ export default async function PaginaImovel({ params }: PageProps<"/imovel/[id]">
               <div className="flex justify-between"><dt className="text-muted">Visto pela última vez</dt><dd>{fmtDataHora(i.visto_em)}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">No catálogo desde</dt><dd>{fmtData(i.criado_em)}</dd></div>
             </dl>
-            <a
-              href={i.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-medium text-accent-fg transition hover:opacity-90"
-            >
-              Ver anúncio na {i.imobiliaria} <Externo />
-            </a>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <a href={i.imobiliaria_site} target="_blank" rel="noopener noreferrer" className="truncate text-xs text-muted hover:text-fg">
-                {i.imobiliaria_site.replace(/^https?:\/\/(www\.)?/, "")}
+            {whatsapp ? (
+              <a
+                href={whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-medium text-accent-fg transition hover:opacity-90"
+              >
+                WhatsApp da {i.imobiliaria}
               </a>
+            ) : externo ? (
+              <a
+                href={i.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-medium text-accent-fg transition hover:opacity-90"
+              >
+                Ver anúncio na {i.imobiliaria} <Externo />
+              </a>
+            ) : null}
+            {whatsapp && externo && (
+              <a href={i.url} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center justify-center gap-1 text-sm text-muted hover:text-fg">
+                Ver anúncio original <Externo width={14} height={14} />
+              </a>
+            )}
+            <div className="mt-4 border-t border-line pt-4">
+              <h2 className="mb-2 text-sm font-semibold">Tenho interesse</h2>
+              <FormContato imovelId={i.id} imobiliaria={i.imobiliaria} acao={enviarContato} />
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-xs text-muted">
+                {siteImob ? (
+                  <a href={i.imobiliaria_site} target="_blank" rel="noopener noreferrer" className="hover:text-fg">
+                    {i.imobiliaria_site.replace(/^https?:\/\/(www\.)?/, "")}
+                  </a>
+                ) : (
+                  i.imobiliaria
+                )}
+                {i.imobiliaria_telefone && ` · ${i.imobiliaria_telefone}`}
+              </span>
               <BotaoFavorito id={i.id} grande />
             </div>
           </div>

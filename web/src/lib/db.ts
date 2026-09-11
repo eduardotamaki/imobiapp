@@ -17,13 +17,12 @@ import type { Sugestao } from "./types";
 
 // IMOBIAPP_DB manda; senão o banco vivo dos scrapers (../data) e, por último,
 // o snapshot que `./run.py exportar` deixa em web/data para o deploy só do site.
-export const CAMINHO_DB = path.resolve(
-  process.env.IMOBIAPP_DB ??
-    [path.join("..", "data", "imoveis.db"), path.join("data", "imoveis.db")].find((c) =>
-      fs.existsSync(/*turbopackIgnore: true*/ c),
-    ) ??
-    path.join("..", "data", "imoveis.db"),
-);
+function caminhoDb(): string {
+  if (process.env.IMOBIAPP_DB) return path.resolve(process.env.IMOBIAPP_DB);
+  const candidatos = [path.join("..", "data", "imoveis.db"), path.join("data", "imoveis.db")];
+  return path.resolve(candidatos.find((c) => fs.existsSync(c)) ?? candidatos[0]);
+}
+export const CAMINHO_DB = caminhoDb();
 
 export const FOTO_LIXO =
   /no-?image|sem-?foto|semimagem|favicon|\/logo|logo[._-]|fundosite|placeholder|default\.(?:jpe?g|png)|indispon|\.svg(?:$|\?)/i;
@@ -33,7 +32,7 @@ const DIA = 86_400_000;
 const INTERVALO_MIN_REINDEX = 10_000;
 // Sobe quando as colunas de mem.idx mudam: em desenvolvimento o estado vive em
 // globalThis e sobrevive ao hot reload, então o índice velho precisa ser refeito.
-const VERSAO_INDICE = 3;
+const VERSAO_INDICE = 4;
 const MIN_BAIRRO = 5; // anúncios com R$/m² para a mediana do bairro valer
 // R$/m² só compara bem dentro do mesmo bairro e para tipos homogêneos; chácara
 // (hectares vs. m²) e comercial (sala vs. galpão) dão mediana sem sentido.
@@ -67,6 +66,8 @@ export function conexao(): Database.Database {
     }
     const db = new Database(CAMINHO_DB, { timeout: 30_000 });
     db.pragma("busy_timeout = 30000");
+    db.pragma("foreign_keys = ON");
+    migra(db);
     db.exec("ATTACH DATABASE ':memory:' AS mem");
     db.function("norm", { deterministic: true }, (s: unknown) => norm(s as string));
     g.__imobiapp = { db, esquema: VERSAO_INDICE, versao: null, verificadoEm: 0, indexadoEm: null, sugestoes: [] };
@@ -85,6 +86,90 @@ export function conexao(): Database.Database {
     }
   }
   return e.db;
+}
+
+/**
+ * O `data_version` só muda para gravações de OUTRAS conexões. Quem grava pelo
+ * próprio site (backoffice, leads) chama isto para o índice ser refeito na
+ * próxima leitura.
+ */
+export function invalida(): void {
+  if (g.__imobiapp) g.__imobiapp.versao = null;
+}
+
+// Tabelas e colunas do backoffice. Espelha imobiapp/db.py: o banco pode
+// chegar aqui vindo de um snapshot antigo, então tudo é idempotente.
+const TABELAS_BACKOFFICE = `
+CREATE TABLE IF NOT EXISTS usuarios (
+    id             INTEGER PRIMARY KEY,
+    imobiliaria_id INTEGER REFERENCES imobiliarias(id) ON DELETE CASCADE,
+    nome           TEXT NOT NULL,
+    email          TEXT NOT NULL UNIQUE,
+    senha_hash     TEXT NOT NULL,
+    papel          TEXT NOT NULL DEFAULT 'imobiliaria',
+    ativo          INTEGER NOT NULL DEFAULT 1,
+    criado_em      TEXT NOT NULL,
+    ultimo_acesso  TEXT
+);
+CREATE TABLE IF NOT EXISTS sessoes (
+    token_hash TEXT PRIMARY KEY,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    criado_em  TEXT NOT NULL,
+    expira_em  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS leads (
+    id             INTEGER PRIMARY KEY,
+    imobiliaria_id INTEGER NOT NULL REFERENCES imobiliarias(id) ON DELETE CASCADE,
+    imovel_id      INTEGER REFERENCES imoveis(id) ON DELETE SET NULL,
+    nome           TEXT NOT NULL,
+    telefone       TEXT,
+    email          TEXT,
+    mensagem       TEXT,
+    origem         TEXT NOT NULL DEFAULT 'site',
+    status         TEXT NOT NULL DEFAULT 'novo',
+    obs            TEXT,
+    criado_em      TEXT NOT NULL,
+    atualizado_em  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_leads_imob ON leads(imobiliaria_id, status, criado_em);
+CREATE TABLE IF NOT EXISTS auditoria (
+    id             INTEGER PRIMARY KEY,
+    usuario_id     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+    imobiliaria_id INTEGER REFERENCES imobiliarias(id) ON DELETE CASCADE,
+    imovel_id      INTEGER REFERENCES imoveis(id) ON DELETE SET NULL,
+    acao           TEXT NOT NULL,
+    detalhes       TEXT,
+    criado_em      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_auditoria_imob ON auditoria(imobiliaria_id, criado_em);
+`;
+
+const COLUNAS_NOVAS: Record<string, [string, string][]> = {
+  imoveis: [
+    ["origem", "TEXT NOT NULL DEFAULT 'scraper'"],
+    ["travado", "INTEGER NOT NULL DEFAULT 0"],
+    ["destaque", "INTEGER NOT NULL DEFAULT 0"],
+    ["obs_interna", "TEXT"],
+  ],
+  imobiliarias: [
+    ["telefone", "TEXT"],
+    ["whatsapp", "TEXT"],
+    ["email", "TEXT"],
+    ["endereco", "TEXT"],
+    ["creci", "TEXT"],
+    ["sobre", "TEXT"],
+    ["logo", "TEXT"],
+  ],
+};
+
+function migra(db: Database.Database): void {
+  db.exec(TABELAS_BACKOFFICE);
+  for (const [tabela, colunas] of Object.entries(COLUNAS_NOVAS)) {
+    const existentes = new Set((db.pragma(`table_info(${tabela})`) as { name: string }[]).map((c) => c.name));
+    for (const [nome, tipo] of colunas) {
+      if (!existentes.has(nome)) db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${nome} ${tipo}`);
+    }
+  }
 }
 
 export function indexadoEm(): string | null {
@@ -119,6 +204,7 @@ interface LinhaImovel {
   foto_capa: string | null;
   status: string;
   criado_em: string;
+  destaque: number;
   imob: string;
   imob_slug: string;
 }
@@ -170,7 +256,8 @@ function indexa(db: Database.Database): Sugestao[] {
       data_variacao  TEXT,
       lat REAL, lng REAL,
       area REAL, preco_m2 REAL, aluguel_m2 REAL,
-      desconto REAL, ref_escopo TEXT, ref_n INTEGER, ref_m2 REAL
+      desconto REAL, ref_escopo TEXT, ref_n INTEGER, ref_m2 REAL,
+      destaque INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX mem.ix_idx_loc ON idx(cidade_n, bairro_n);
     CREATE INDEX mem.ix_idx_fin ON idx(fin);
@@ -216,7 +303,7 @@ function indexa(db: Database.Database): Sugestao[] {
     .prepare(
       `SELECT i.id, i.imobiliaria_id, i.codigo, i.finalidade, i.tipo, i.titulo, i.descricao,
               i.preco, i.preco_aluguel, i.area_util, i.area_total, i.endereco, i.bairro, i.cidade,
-              i.latitude, i.longitude, i.foto_capa, i.status, i.criado_em,
+              i.latitude, i.longitude, i.foto_capa, i.status, i.criado_em, i.destaque,
               m.nome AS imob, m.slug AS imob_slug
          FROM imoveis i JOIN imobiliarias m ON m.id = i.imobiliaria_id`,
     )
@@ -286,8 +373,8 @@ function indexa(db: Database.Database): Sugestao[] {
   const insIdx = db.prepare(
     `INSERT INTO mem.idx (id, fin, cidade_n, cidade_d, bairro_n, bairro_d, capa, fotos_json, n_fotos, novo,
                           preco_anterior, variacao, data_variacao, lat, lng, area, preco_m2, aluguel_m2,
-                          desconto, ref_escopo, ref_n, ref_m2)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                          desconto, ref_escopo, ref_n, ref_m2, destaque)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   );
   const insFts = db.prepare("INSERT INTO mem.fts (rowid, texto) VALUES (?, ?)");
   const agora = Date.now();
@@ -361,7 +448,7 @@ function indexa(db: Database.Database): Sugestao[] {
         l.id, d.fin, d.cn, cidadeD, d.bn, bairroD, capa, JSON.stringify(carrossel), nFotos, novo,
         precoAnterior, variacao, dataVariacao,
         okCoord ? l.latitude : null, okCoord ? l.longitude : null,
-        d.area, d.precoM2, d.aluguelM2, desconto, refEscopo, refN, refM2,
+        d.area, d.precoM2, d.aluguelM2, desconto, refEscopo, refN, refM2, l.destaque ? 1 : 0,
       );
 
       const texto = [

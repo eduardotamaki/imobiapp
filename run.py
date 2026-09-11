@@ -219,6 +219,46 @@ def cmd_exportar(args):
     print(f"{destino}: {n} imóveis, {destino.stat().st_size / 1e6:.1f} MB")
 
 
+def cmd_usuario(args):
+    """Cria (ou redefine a senha de) um usuario do backoffice.
+
+    O hash segue o mesmo formato do site (scrypt, node:crypto), entao um
+    usuario criado aqui entra normalmente em /painel/entrar.
+    """
+    import getpass
+    import hashlib
+    import secrets
+
+    senha = args.senha or getpass.getpass("senha: ")
+    if len(senha) < 8:
+        print("senha precisa ter pelo menos 8 caracteres", file=sys.stderr)
+        return 2
+    sal = secrets.token_bytes(16)
+    h = hashlib.scrypt(senha.encode(), salt=sal, n=16384, r=8, p=1, dklen=64)
+    senha_hash = f"scrypt$16384$8$1${sal.hex()}${h.hex()}"
+
+    con = db.conecta(args.banco)
+    imob_id = None
+    if args.imobiliaria:
+        r = con.execute("SELECT id FROM imobiliarias WHERE slug=?", (args.imobiliaria,)).fetchone()
+        if not r:
+            print(f"imobiliaria '{args.imobiliaria}' nao existe (veja ./run.py listar)", file=sys.stderr)
+            return 2
+        imob_id = r["id"]
+    papel = "admin" if imob_id is None else "imobiliaria"
+    con.execute(
+        """INSERT INTO usuarios (imobiliaria_id, nome, email, senha_hash, papel, ativo, criado_em)
+           VALUES (?,?,?,?,?,1,?)
+           ON CONFLICT(email) DO UPDATE SET senha_hash=excluded.senha_hash, ativo=1,
+             nome=COALESCE(NULLIF(excluded.nome, ''), usuarios.nome)""",
+        (imob_id, args.nome or args.email.split("@")[0], args.email.lower().strip(),
+         senha_hash, papel, db.agora()),
+    )
+    con.commit()
+    print(f"{args.email}: {papel}" + (f" ({args.imobiliaria})" if imob_id else ""))
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -265,6 +305,13 @@ def main(argv=None):
     c = sub.add_parser("exportar", help="gera web/data/imoveis.db para publicar o site")
     c.add_argument("--destino", default="web/data/imoveis.db")
     c.set_defaults(func=cmd_exportar)
+
+    c = sub.add_parser("usuario", help="cria usuário do painel (sem --imobiliaria vira admin)")
+    c.add_argument("email")
+    c.add_argument("--senha", help="se omitido, pergunta")
+    c.add_argument("--nome")
+    c.add_argument("--imobiliaria", help="slug da imobiliária dona do usuário")
+    c.set_defaults(func=cmd_usuario)
 
     args = p.parse_args(argv)
     return args.func(args)

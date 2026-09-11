@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -21,14 +20,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: TEMA_SCRIPT }} />
         <meta name="referrer" content="no-referrer" />
       </head>
-      <body className="flex min-h-full flex-col">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <footer className="border-t border-line px-4 py-6 text-center text-xs text-muted">
-          Dados coletados dos sites das imobiliárias de Itajubá e região. Preços e disponibilidade podem ter mudado
-          desde a última coleta; confirme no anúncio original.
-        </footer>
-      </body>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }

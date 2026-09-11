@@ -14,3 +14,9 @@ services:
         value: "22"
       - key: IMOBIAPP_DB
         value: data/imoveis.db
+      # Admin do backoffice criado no primeiro acesso quando o banco não tem
+      # usuários (o Render free não tem disco: a cada deploy volta o snapshot).
+      - key: PAINEL_ADMIN_EMAIL
+        sync: false
+      - key: PAINEL_ADMIN_SENHA
+        sync: false

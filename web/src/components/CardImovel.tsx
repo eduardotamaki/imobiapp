@@ -18,9 +18,11 @@ interface Props {
   aoPassar?: (id: number | null) => void;
 }
 
+const ROTULO_STATUS: Record<string, string> = { vendido: "Vendido", alugado: "Alugado", pausado: "Pausado", removido: "Saiu do ar" };
+
 export function Badges({ i, fin }: { i: Imovel; fin: string }) {
   const badges: { texto: string; classe: string; titulo?: string }[] = [];
-  if (i.status !== "disponivel") badges.push({ texto: "Saiu do ar", classe: "bg-neutral-700 text-white" });
+  if (i.status !== "disponivel") badges.push({ texto: ROTULO_STATUS[i.status] ?? "Saiu do ar", classe: "bg-neutral-700 text-white" });
   if (i.novo) badges.push({ texto: "Novo", classe: "bg-accent text-accent-fg" });
   if (i.variacao != null && i.variacao < 0)
     badges.push({ texto: `▼ ${fmtPct(i.variacao).replace("-", "")}`, classe: "bg-queda-soft text-queda", titulo: `Baixou de ${fmtPreco(i.preco_anterior)}` });

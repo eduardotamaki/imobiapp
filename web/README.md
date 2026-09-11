@@ -40,6 +40,18 @@ Variáveis:
   exporta; `ids=1,2,3` busca por id), `/api/imoveis/:id`, `/api/mapa`,
   `/api/resumo`, `/api/sugestoes?q=`.
 
+- **Painel** (`/painel`): backoffice por imobiliária. Login com e-mail e
+  senha (scrypt, sessão em cookie httpOnly, tabela `sessoes`), `src/proxy.ts`
+  barra quem não tem cookie. Páginas em `src/app/painel/(app)/`, ações em
+  `src/app/painel/acoes.ts` (Server Actions, todas conferem sessão e dono do
+  imóvel), consultas em `src/lib/painel.ts`, autenticação em `src/lib/auth.ts`.
+  Admin (usuário sem imobiliária) escolhe sobre qual imobiliária trabalha no
+  seletor da barra lateral. Cada gravação chama `invalida()` para o índice em
+  memória ser refeito na próxima leitura.
+
+Variáveis do painel: `PAINEL_ADMIN_EMAIL`, `PAINEL_ADMIN_SENHA` (e
+`PAINEL_ADMIN_NOME`) criam o administrador quando o banco não tem usuários.
+
 ## Como funciona por dentro
 
 `src/lib/db.ts` abre o banco e monta, num SQLite em memória anexado, uma

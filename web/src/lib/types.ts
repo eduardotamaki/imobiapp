@@ -90,6 +90,10 @@ export interface Contexto {
 }
 
 export interface ImovelDetalhe extends Imovel {
+  origem: string;
+  imobiliaria_whatsapp: string | null;
+  imobiliaria_telefone: string | null;
+  imobiliaria_email: string | null;
   descricao: string | null;
   endereco: string | null;
   cep: string | null;

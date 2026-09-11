@@ -286,7 +286,7 @@ function ordenacao(f: Filtros, temTexto: boolean): string {
       // (os ids são sequenciais por scraper).
       return temTexto
         ? `ft.rank, x.capa IS NULL, ${p} IS NULL, i.id`
-        : `x.capa IS NULL, ${p} IS NULL, x.novo DESC, (x.variacao < 0) DESC, date(i.criado_em) DESC, (i.id * 2654435761) % 1000003`;
+        : `x.destaque DESC, x.capa IS NULL, ${p} IS NULL, x.novo DESC, (x.variacao < 0) DESC, date(i.criado_em) DESC, (i.id * 2654435761) % 1000003`;
   }
 }
 
@@ -425,10 +425,25 @@ export function detalhe(id: number): ImovelDetalhe | null {
   const db = conexao();
   const base = db
     .prepare(
-      `SELECT ${COLS}, i.descricao, i.endereco, i.cep, i.atualizado_em, x.cidade_n, x.bairro_n
+      `SELECT ${COLS}, i.descricao, i.endereco, i.cep, i.atualizado_em, x.cidade_n, x.bairro_n,
+              i.origem, m.whatsapp AS imobiliaria_whatsapp, m.telefone AS imobiliaria_telefone, m.email AS imobiliaria_email
        ${FROM} WHERE i.id = ?`,
     )
-    .get(id) as (Imovel & { fotos_json: string; descricao: string | null; endereco: string | null; cep: string | null; atualizado_em: string; cidade_n: string | null; bairro_n: string | null }) | undefined;
+    .get(id) as
+    | (Imovel & {
+        fotos_json: string;
+        descricao: string | null;
+        endereco: string | null;
+        cep: string | null;
+        atualizado_em: string;
+        cidade_n: string | null;
+        bairro_n: string | null;
+        origem: string;
+        imobiliaria_whatsapp: string | null;
+        imobiliaria_telefone: string | null;
+        imobiliaria_email: string | null;
+      })
+    | undefined;
   if (!base) return null;
 
   const fotos = (db.prepare("SELECT url FROM fotos WHERE imovel_id = ? ORDER BY ordem").all(id) as { url: string }[])

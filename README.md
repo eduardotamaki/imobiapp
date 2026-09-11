@@ -23,6 +23,45 @@ panorama do mercado e favoritos. Veja [web/README.md](web/README.md).
 cd web && npm install && npm run dev    # http://localhost:3000
 ```
 
+## Backoffice das imobiliárias (`/painel`)
+
+O site tem uma área logada em `/painel` para cada imobiliária gerenciar o
+que está no catálogo:
+
+- **Início**: anúncios no ar, leads novos, entradas e fechamentos em 30 dias,
+  pendências de qualidade (sem foto, sem preço, sem mapa, descrição curta),
+  carteira por tipo e status.
+- **Imóveis**: lista com busca, filtros e ações em lote (pausar, reativar,
+  vendido, alugado, destacar, proteger da coleta, excluir). Cadastro e edição
+  completos: valores, áreas, cômodos, endereço com ponto no mapa, fotos por
+  link (ordem e capa), características, descrição, observações internas.
+- **Leads**: o formulário "Tenho interesse" de cada anúncio no site cai aqui,
+  com situação, anotações e atalhos de WhatsApp, telefone e e-mail.
+- **Imobiliária**: nome, WhatsApp (vira botão nos anúncios), telefone,
+  e-mail, CRECI, endereço, logo e texto de apresentação.
+- **Usuários** e **Atividade** (auditoria de tudo que foi feito pelo painel).
+
+Anúncio **coletado** do site da imobiliária pode ser editado; ao salvar ele
+fica "protegido" (`travado = 1`) e a próxima coleta só registra que continua
+no ar, sem sobrescrever. Anúncio **cadastrado** no painel (`origem =
+'manual'`) nunca é tocado pela coleta. Só quem marcou como vendido/alugado
+ou pausou é que tira do site.
+
+Usuários: no primeiro acesso sem nenhum usuário, `/painel/entrar` cria a
+conta do administrador; o admin depois cadastra usuários por imobiliária.
+Pela linha de comando:
+
+```bash
+./run.py usuario admin@exemplo.com                 # admin geral (pergunta a senha)
+./run.py usuario joao@dfc.com --imobiliaria dfc    # usuário da imobiliária dfc
+```
+
+Em host sem disco persistente, `PAINEL_ADMIN_EMAIL` e `PAINEL_ADMIN_SENHA`
+recriam o admin a cada deploy. Mas atenção: **tudo que o painel grava vai
+para o mesmo SQLite**; no Render free isso se perde a cada deploy. Para o
+painel valer de verdade, o site precisa de disco (VPS, Fly.io com volume,
+Render com disco pago).
+
 ## Publicar só o site (Render)
 
 O `render.yaml` na raiz sobe apenas `web/`. Como o Render free não tem disco
@@ -44,6 +83,7 @@ ou quando `IMOBIAPP_DB` aponta para ele.
 | Comando | Para quê |
 |---|---|
 | `exportar` | Gera `web/data/imoveis.db`, o snapshot que o site publicado usa. |
+| `usuario` | Cria ou redefine a senha de um usuário do painel (`--imobiliaria slug` para vincular). |
 | `coletar` | Roda os scrapers. `--só galhardo,dfc` limita os sites, `--limite 5` limita imóveis por site, `--sem-cache` força rede. |
 | `listar` | Mostra os 31 sites registrados, plataforma e situação. |
 | `buscar` | Consulta o catálogo: `--max-preco --min-preco --quartos --vagas --area --tipo --cidade --bairro --ordem preco_m2`. |
