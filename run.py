@@ -212,6 +212,14 @@ def cmd_exportar(args):
     con = db.conecta(args.banco, criar_esquema=False)
     con.execute("VACUUM INTO ?", (str(tmp),))
     con.close()
+    # O snapshot vai para um repositório público: nada de credenciais nem
+    # dados pessoais. No Render o admin é recriado por PAINEL_ADMIN_*.
+    con = sqlite3.connect(tmp)
+    for tabela in ("sessoes", "usuarios", "leads", "auditoria"):
+        con.execute(f"DELETE FROM {tabela}")
+    con.commit()
+    con.execute("VACUUM")
+    con.close()
     tmp.replace(destino)
     con = sqlite3.connect(destino)
     n = con.execute("SELECT count(*) FROM imoveis").fetchone()[0]
