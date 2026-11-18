@@ -19,8 +19,21 @@ _RE_DETALHE = r"/(?:comprar|alugar|temporada)/[a-z]{2}/[^/]+/[^/]+/[^/]+/\d+"
 class Uso(Scraper):
     plataforma = "uso"
     max_paginas = 60
+    # Em 2026 a plataforma renumerou os ids nas URLs; a referencia do anuncio
+    # (AP00061, 641...) continuou a mesma.
+    chave_codigo = True
 
     def listar_urls(self):
+        # O mesmo anuncio aparece tambem como ".../123/?favoritar".
+        vistos, saida = set(), []
+        for u in self._listar_urls():
+            u = u.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+            if u not in vistos:
+                vistos.add(u)
+                saida.append(u)
+        return saida
+
+    def _listar_urls(self):
         urls = comum.urls_do_sitemap(self.s, f"{self.site}/sitemap.xml", _RE_DETALHE)
         # O sitemap so lista o que esta a venda; a locacao sai da paginacao.
         vistos = set(urls)

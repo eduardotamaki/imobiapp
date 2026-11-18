@@ -16,9 +16,16 @@ class Kenlo(Scraper):
     max_paginas = 25
 
     def listar_urls(self):
-        buscas = comum.urls_do_sitemap(self.s, f"{self.site}/sitemap.xml", r"/imoveis/")
+        locs = comum.urls_do_sitemap(self.s, f"{self.site}/sitemap.xml", r"/imove(?:l|is)/")
+        buscas = [u for u in locs if "/imoveis/" in u]
+        # Desde 2026 os sub-sitemaps (sitemap/imoveis/*.xml) listam os
+        # anuncios direto; a busca paginada nem sempre traz todos.
         urls: list[str] = []
         vistos: set[str] = set()
+        for u in locs:
+            if "/imovel/" in u and u not in vistos:
+                vistos.add(u)
+                urls.append(u)
         for busca in buscas:
             for pagina in range(1, self.max_paginas + 1):
                 alvo = busca if pagina == 1 else f"{busca}?pagina={pagina}"

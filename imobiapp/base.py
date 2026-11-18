@@ -23,6 +23,10 @@ class Scraper:
     plataforma: str = ""
     status: str = "ativa"     # ativa | offline | sem_scraper
     obs: str | None = None
+    # Quando o site troca as URLs mas mantem o codigo de referencia, a coleta
+    # reaproveita o registro antigo com o mesmo (codigo, finalidade) em vez de
+    # dar o imovel como novo. So para plataformas em que esse par e unico.
+    chave_codigo: bool = False
 
     def __init__(self, sessao: Sessao | None = None, limite: int | None = None):
         self.s = sessao or Sessao()
@@ -101,7 +105,8 @@ class Scraper:
                 # Transacao curta e por imovel: nada de segurar o banco
                 # enquanto se espera a proxima pagina chegar da rede.
                 with db.ESCRITA:
-                    res = db.salva_imovel(con, imob_id, item)
+                    res = db.salva_imovel(con, imob_id, item,
+                                          chave_codigo=self.chave_codigo, inicio=inicio)
                     con.commit()
                 contagem["encontrados"] += 1
                 contagem[{"novo": "novos", "atualizado": "atualizados"}.get(res, "igual")] += 1

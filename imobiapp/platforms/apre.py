@@ -26,6 +26,9 @@ ROTULOS = {
 class Apre(Scraper):
     plataforma = "apre"
     max_paginas = 40
+    # A URL leva o preco ("...-por-r-50000000-..."): mudou o preco, mudou a
+    # URL. A referencia do anuncio e o que identifica o imovel.
+    chave_codigo = True
 
     def listar_urls(self):
         # O sitemap lista as paginas de busca por tipo; cada uma pagina os

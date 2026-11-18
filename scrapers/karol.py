@@ -3,15 +3,13 @@ from imobiapp.platforms.universal import Universal
 
 
 class Karol(Universal):
-    """Plataforma Universal, mas o backend do site esta fora do ar.
+    """Plataforma Universal no tema novo (endpoint /retornar-imoveis-disponiveis).
 
-    Qualquer pagina de imovel responde com
-    {"error": true, ... "401 Unauthorized" ... "redirect": "/manutencao"},
-    ou seja, o problema e na assinatura da imobiliaria com a plataforma.
-    O scraper fica pronto e passa a render sozinho quando normalizarem.
+    O site ficou meses com o backend em manutencao (401 da plataforma) e
+    voltou em nov/2026 com o tema novo.
     """
 
     slug = "karol"
     nome = "Karol Imóveis"
     site = "https://www.karoldamazioimoveis.com.br"
-    obs = "Backend do site fora do ar (401 na plataforma); coleta volta sozinha."
+    api_nova = True

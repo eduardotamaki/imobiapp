@@ -298,8 +298,15 @@ def _hash(d: dict) -> str:
     ).hexdigest()[:16]
 
 
-def salva_imovel(con, imobiliaria_id: int, dados: dict) -> str:
-    """Insere ou atualiza um imovel. Devolve 'novo' | 'atualizado' | 'igual'."""
+def salva_imovel(con, imobiliaria_id: int, dados: dict, *,
+                 chave_codigo: bool = False, inicio: str | None = None) -> str:
+    """Insere ou atualiza um imovel. Devolve 'novo' | 'atualizado' | 'igual'.
+
+    Com `chave_codigo`, uma URL desconhecida cujo (codigo, finalidade) ja
+    exista na imobiliaria assume aquele registro (o site mudou o endereco
+    do anuncio). So vale para registros ainda nao vistos nesta coleta
+    (`visto_em < inicio`), para nao fundir dois anuncios do ar.
+    """
     url = dados.get("url")
     if not url:
         raise ValueError("imovel sem url")
@@ -312,6 +319,21 @@ def salva_imovel(con, imobiliaria_id: int, dados: dict) -> str:
     linha = con.execute(
         "SELECT id, hash_conteudo, preco, preco_aluguel, travado FROM imoveis WHERE url=?", (url,)
     ).fetchone()
+
+    if linha is None and chave_codigo and inicio and valores.get("codigo"):
+        antigo = con.execute(
+            """SELECT id FROM imoveis
+               WHERE imobiliaria_id=? AND codigo=? AND finalidade IS ? AND origem='scraper'
+                 AND visto_em < ?
+               ORDER BY visto_em DESC LIMIT 1""",
+            (imobiliaria_id, valores["codigo"], valores.get("finalidade"), inicio),
+        ).fetchone()
+        if antigo:
+            con.execute("UPDATE imoveis SET url=? WHERE id=?", (url, antigo["id"]))
+            linha = con.execute(
+                "SELECT id, hash_conteudo, preco, preco_aluguel, travado FROM imoveis WHERE id=?",
+                (antigo["id"],),
+            ).fetchone()
 
     if linha is None:
         cols = ["imobiliaria_id", "url", *CAMPOS,
